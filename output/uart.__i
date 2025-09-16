@@ -1,0 +1,1 @@
+"source\uart.c" BROWSE INCDIR(.\inc) DEBUG OBJECTEXTEND PRINT(.\list\uart.lst) OBJECT(.\output\uart.obj)

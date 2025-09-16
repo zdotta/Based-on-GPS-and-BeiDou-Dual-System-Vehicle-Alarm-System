@@ -1,0 +1,629 @@
+C51 COMPILER V9.00   GPS                                                                   09/06/2024 00:02:55 PAGE 1   
+
+
+C51 COMPILER V9.00, COMPILATION OF MODULE GPS
+OBJECT MODULE PLACED IN .\output\gps.obj
+COMPILER INVOKED BY: D:\Keli\C51\BIN\C51.EXE source\gps.c BROWSE INCDIR(.\inc) DEBUG OBJECTEXTEND PRINT(.\list\gps.lst) 
+                    -OBJECT(.\output\gps.obj)
+
+line level    source
+
+   1          #include "STC15F2K60S2.h"        //±ÿ–Î°£
+   2          #include "sys.h"                 //±ÿ–Î°£
+   3          #include "displayer.h"
+   4          #include "key.h"
+   5          #include "uart1.h"
+   6          #include "DS1302.h"
+   7          #include "adc.h"
+   8          #include "M24C02.h"
+   9          #include "beep.h"
+  10          #include <math.h>
+  11          #include "music.h"
+  12          #include "uart2.h"
+  13          #include "vib.h"
+  14          #warning "Created by zdot"
+*** WARNING C320 IN LINE 14 OF source\gps.c: "Created by zdot"
+  15          code unsigned long SysClock=11059200;         //±ÿ–Î°£∂®“ÂœµÕ≥π§◊˜ ±÷”∆µ¬ (Hz)£¨”√ªß±ÿ–Î–ﬁ∏ƒ≥…”Î µº π§◊˜∆µ
+             -¬ £®œ¬‘ÿ ±—°‘Òµƒ£©“ª÷¬
+  16          #ifdef _displayer_H_                          //œ‘ æƒ£øÈ—°”√ ±±ÿ–Î°££® ˝¬Îπ‹œ‘ æ“Î¬Î±Ì£¨”√ëÙø…–ﬁ∏ƒ°¢‘ˆº”µ»
+             -£© 
+  17          code char decode_table[]={0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f,0x00,0x08,0x40,0x01,0x41,0x48,
+             -0x76,0x38,0x40,0x00,  
+  18                                /* –Ú∫≈:   0      1    2     3    4           5    6        7   8         9                       10      11       12   13   14   15    16
+             -   17   18   19        */
+  19                          /* œ‘ æ:   0    1    2     3    4     5    6    7   8    9  (Œﬁ)   œ¬-  ÷–-  …œ-  …œ÷–-  ÷
+             -–œ¬-  H    L    -     £®Œﬁ£©*/  
+  20                                         0x3f|0x80,0x06|0x80,0x5b|0x80,0x4f|0x80,0x66|0x80,0x6d|0x80,0x7d|0x80,0x07|0x80,0x
+             -7f|0x80,0x6f|0x80,   
+  21                       /* ¥¯–° ˝µ„     20         21         22         23      24        25        26        27    
+             -    28        29        */
+  22                                                                  0x5c,0x77,0x71,0x37,0x31,0x39,0x3e,0x38};
+  23                                                          // 30 o  31A  32F  33N  34T      35C  36U       37L
+  24          #endif
+  25          
+  26          #ifndef uchar 
+  27          #define uchar unsigned char
+  28          #endif
+  29          
+  30          #ifndef uint  
+  31          #define uint  unsigned int
+  32          #endif
+  33          
+  34          
+  35          code uchar alarm[]=
+  36          {       0x36,0x18,
+  37                  0x33,0x18,
+  38                  0x36,0x18,
+  39                  0x33,0x18,
+  40                  0x21,0x18,
+  41                  0x21,0x18,
+  42                  0x21,0x18,
+  43          };
+  44                                                  
+  45          #define PI 3.1415926535
+  46          #define EARTH_RADIUS 637100 //µ•ŒªŒ™10m
+C51 COMPILER V9.00   GPS                                                                   09/06/2024 00:02:55 PAGE 2   
+
+  47            char zdot;
+  48            code char matchhead[6] = "$GNGGA";
+  49            int automode =0;                                                                                      //”√”⁄≈–∂œ «∑Òø™∆Ù◊‘∂Ø∂®Œª
+  50            xdata char buf[72],uart2_buf[72];                                                                     // ˝æ›Ω” ’«¯
+  51            uchar hour_temp;                                                                              //–° ±£¨”√”⁄ ±«¯µ˜’˚
+  52            struct_DS1302_RTC time;                                                               // ±º‰
+  53            uchar lon_h,lon_m,lon_s,lat_h,lat_m,lat_s;                    //Ω” ’µΩµƒæ≠Œ≥∂»
+  54            bit lon_lat = 0;                                                                              //œ‘ ææ≠∂»ªÚŒ≥∂»
+  55            uchar status = 0;                                                                     //ƒ£ Ω—°‘Ò
+  56            uchar i,weixuan = 1;                                                                  //”√”⁄ ˝◊÷—°‘Ò
+  57            uchar lock_flag = 0;                                                                  //∑¿µ¡/∑¿◊ﬂ ß «∑Òø™∆Ù£¨¥Ê¥¢‘⁄0x80£¨…œµÁ ±∂¡»°
+  58            uchar xlon_h,xlon_m,xlon_s,xlat_h,xlat_m,xlat_s;              //æØ±®/≤‚æ‡π¶ƒ‹º«¬ºµƒ◊¯±Íµ„æ≠Œ≥∂»
+  59            uchar point_addr = 0;                                                         //◊¯±Í¥Ê¥¢‘⁄∑«“◊ ß–‘¥Ê¥¢µƒŒª÷√
+  60            xdata uint safety_dis,dis_temp,dis=0;                         //∞≤»´æ‡¿Î£¨¥Ê¥¢‘⁄0x81£¨…œµÁ ±∂¡»°£ª…Ë∂®æ‡¿Î£ª µº æ‡¿Î
+  61            xdata uint lockcode,code_temp = 0,trycode = 0;                //√‹¬Î£¨¥Ê¥¢‘⁄0x85£¨…œµÁ ±∂¡»°£ª…Ë∂® ± ‰»Îµƒ√‹¬Î£ª≥¢ ‘Ω‚
+             -À¯ ‰»Îµƒ√‹¬Î
+  62            xdata uchar send_buf[19];                                                             // ˝æ›∑¢ÀÕ«¯
+  63          
+  64          
+  65          
+  66          void uart1_callback();          //¥Æø⁄1Ω” ’ªÿµ˜
+  67          void key_callback();            //∞¥º¸ªÿµ˜                              
+  68          void nav_callback();            //µº∫Ω∞¥º¸ªÿµ˜
+  69          void display();                         // ˝¬Îπ‹º∞ledœ‘ æ£¨1s∏¸–¬œ‘ æªÚ∞¥œ¬∞¥≈•∫Û∏¸–¬œ‘ æ
+  70          void Delay10ms();                       //—” ±∫Ø ˝£¨”√”⁄–¥»Î∑«“◊ ß–‘¥Ê¥¢∆˜
+  71          int cal_dis();                          //æ‡¿Îº∆À„
+  72          double radian(float);           //Ω«∂»◊™ª°∂»
+  73          void M24C02_Init();                     //œ¥ƒ⁄¥Ê
+  74          void vib_callback();            //“Ï≥£’∂ØºÏ≤‚
+  75          void uart2_callback();          //¥Æø⁄2Ω” ’ªÿµ˜
+  76          
+  77          void Delay10ms()                //@11.0592MHz
+  78          {
+  79   1              unsigned char i, j;
+  80   1      
+  81   1              i = 108;
+  82   1              j = 145;
+  83   1              do
+  84   1              {
+  85   2                      while (--j);
+  86   2              } while (--i);
+  87   1      }
+  88          
+  89          
+  90          void M24C02_Init(){
+  91   1              int a = 0;
+  92   1              for(;a<256;a++){
+  93   2              M24C02_Write(a,0);
+  94   2              Delay10ms();
+  95   2              }
+  96   1      }
+  97          
+  98          
+  99          void vib_callback(){
+ 100   1              if(GetVibAct()==enumVibQuake){
+ 101   2                      status=0x44;}
+ 102   1              else{
+ 103   2                      status=0x04;}
+ 104   1      }
+ 105          //¥¶¿ÌΩ” ’µΩµƒ±®Œƒ ˝æ›
+ 106          void uart1_callback()
+ 107          {       
+C51 COMPILER V9.00   GPS                                                                   09/06/2024 00:02:55 PAGE 3   
+
+ 108   1              
+ 109   1              if(automode==0){                                           //¥¶”⁄ ÷∂Ø∂®Œªƒ£ Ω ±£¨≤…”√¥Æø⁄1µƒ ˝æ›
+ 110   2              //UTC ±º‰–£◊º
+ 111   2              DS1302Init(time);                               
+ 112   2              hour_temp = (buf[7] - '0')*10+(buf[8] - '0')+8;
+ 113   2              if(hour_temp > 24)
+ 114   2                      hour_temp -= 24;
+ 115   2              time.hour = (hour_temp/10)*16 + hour_temp%10;
+ 116   2              time.minute = (buf[9] - '0')*16 + (buf[10] - '0');
+ 117   2              time.second = (buf[11] - '0')*16 + (buf[12] - '0');
+ 118   2              Seg7Print(time.hour/16,time.hour%16,12,time.minute/16,time.minute%16,12,time.second/16,time.second%16);
+ 119   2              
+ 120   2              RTC_Write(time);
+ 121   2              display();
+ 122   2              
+ 123   2      
+ 124   2              //æ≠Œ≥∂» ˝æ›
+ 125   2              lat_h = (buf[18] - '0')*10 + (buf[19] - '0');
+ 126   2              lat_m = (buf[20] - '0')*10 + (buf[21] - '0');
+ 127   2              lat_s = ((buf[23] - '0')*1000 + (buf[24] - '0')*100+(buf[25] - '0')*10 + (buf[26] - '0'))*6/1000;
+ 128   2              lon_h = (buf[31] - '0')*100 + (buf[32] - '0')*10 + (buf[33] - '0');
+ 129   2              lon_m = (buf[34] - '0')*10 + (buf[35] - '0');
+ 130   2              lon_s = ((buf[37] - '0')*1000 + (buf[38] - '0')*100+(buf[39] - '0')*10 + (buf[40] - '0'))*6/1000;
+ 131   2      
+ 132   2              //æ‡¿Î∏¸–¬
+ 133   2              if(lock_flag == 1||status == 0x18)
+ 134   2                      dis = cal_dis();
+ 135   2      
+ 136   2              if(lock_flag == 1 && dis>safety_dis)
+ 137   2                      status = 0x44;
+ 138   2              
+ 139   2               }
+ 140   1              
+ 141   1              
+ 142   1      }
+ 143          void uart2_callback(){
+ 144   1              if(automode==1){                                           //¥¶”⁄◊‘∂Ø∂®Œªƒ£ Ω ±£¨≤…”√¥Æø⁄2µƒ ˝æ›
+ 145   2              //UTC ±º‰–£◊º                           
+ 146   2              hour_temp = (uart2_buf[7] - '0')*10+(uart2_buf[8] - '0')+8;
+ 147   2              if(hour_temp > 24)
+ 148   2                      hour_temp -= 24;
+ 149   2              time.hour = (hour_temp/10)*16 + hour_temp%10;
+ 150   2              time.minute = (uart2_buf[9] - '0')*16 + (uart2_buf[10] - '0');
+ 151   2              time.second = (uart2_buf[11] - '0')*16 + (uart2_buf[12] - '0');
+ 152   2              Seg7Print(time.hour/16,time.hour%16,12,time.minute/16,time.minute%16,12,time.second/16,time.second%16);
+ 153   2              RTC_Write(time);
+ 154   2              
+ 155   2      
+ 156   2              //æ≠Œ≥∂» ˝æ›
+ 157   2              lat_h = (uart2_buf[18] - '0')*10 + (uart2_buf[19] - '0');
+ 158   2              lat_m = (uart2_buf[20] - '0')*10 + (uart2_buf[21] - '0');
+ 159   2              lat_s = ((uart2_buf[23] - '0')*1000 + (uart2_buf[24] - '0')*100+(uart2_buf[25] - '0')*10 + (uart2_buf[26]
+             - - '0'))*6/1000;
+ 160   2              lon_h = (uart2_buf[31] - '0')*100 + (uart2_buf[32] - '0')*10 + (uart2_buf[33] - '0');
+ 161   2              lon_m = (uart2_buf[34] - '0')*10 + (uart2_buf[35] - '0');
+ 162   2              lon_s = ((uart2_buf[37] - '0')*1000 + (uart2_buf[38] - '0')*100+(uart2_buf[39] - '0')*10 + (uart2_buf[40]
+             - - '0'))*6/1000;
+ 163   2      
+ 164   2              //æ‡¿Î∏¸–¬
+ 165   2              if(lock_flag == 1||status == 0x18)
+ 166   2                      dis = cal_dis();
+ 167   2      
+C51 COMPILER V9.00   GPS                                                                   09/06/2024 00:02:55 PAGE 4   
+
+ 168   2              if(lock_flag == 1 && dis>safety_dis)
+ 169   2                      status = 0x44;
+ 170   2                      display();
+ 171   2              }
+ 172   1      }
+ 173          void key_callback(){
+ 174   1      
+ 175   1              //∞¥œ¬key1Ω¯»Îƒ£ Ω«–ªªΩÁ√Ê
+ 176   1              if(GetKeyAct(enumKey1) == enumKeyPress){
+ 177   2                if((((status&0x0f)==0)||((status&0x0f)==0x08))&&(status&0x0f)!=0x03){ //µ±¥¶”⁄≥ı º◊¥Ã¨ªÚ¥¶”⁄◊Ó∫Û“ª∏ˆƒ£ 
+             -Ω ±£¨∑µªÿµΩµ⁄“ª∏ˆƒ£ Ω
+ 178   3                      status = 0x01;
+ 179   3                      }
+ 180   2                else{
+ 181   3                      status = (status&0x0f)*2;               //Ω¯»Îœ¬“ªƒ£ Ω
+ 182   3                      }
+ 183   2              }
+ 184   1      
+ 185   1              //µ±¥¶”⁄ ±º‰–£◊ºƒ£ Ω ±£¨key2ø™∆Ù◊‘∂Ø∂®Œª£¨key3πÿ±’◊‘∂Ø∂®Œª
+ 186   1              if((status&0x0f) == 0x01){
+ 187   2                      if(GetKeyAct(enumKey2) == enumKeyPress){
+ 188   3                              status=0x03;
+ 189   3                              }
+ 190   2                      }
+ 191   1              //∂®Œªƒ£ Ωœ¬∞¥œ¬key2º«¬ºµ±«∞◊¯±Í 
+ 192   1              if((status&0x0f) == 0x02){
+ 193   2                      if(GetKeyAct(enumKey2) == enumKeyPress){
+ 194   3                      
+ 195   3                      M24C02_Write(point_addr,lat_h);
+ 196   3                      Delay10ms();
+ 197   3                      
+ 198   3                      M24C02_Write(point_addr+0x01,lat_m);
+ 199   3                      Delay10ms();
+ 200   3      
+ 201   3                      M24C02_Write(point_addr+0x02,lat_s);
+ 202   3                      Delay10ms();
+ 203   3      
+ 204   3                      M24C02_Write(point_addr+0x03,lon_h);
+ 205   3                      Delay10ms();
+ 206   3      
+ 207   3                      M24C02_Write(point_addr+0x04,lon_m);
+ 208   3                      Delay10ms();
+ 209   3      
+ 210   3                      M24C02_Write(point_addr+0x05,lon_s);
+ 211   3                      Delay10ms();
+ 212   3      
+ 213   3                      status = status + 0x10;         //º«¬º◊¯±Íµƒµ•Œª“∆∂Ø1Œª
+ 214   3                      point_addr = ((status>>4)&0x0f)*6;
+ 215   3                      }
+ 216   2              }
+ 217   1      
+ 218   1              //∑¿µ¡∑¿◊ﬂ ßƒ£ Ωœ¬∞¥œ¬key2£¨Ω¯»Îæ‡¿Î…Ë÷√ΩÁ√Ê
+ 219   1              else if((status&0x0f)==0x04){
+ 220   2                      if(GetKeyAct(enumKey2)==enumKeyPress)
+ 221   2                      status = 0x14;
+ 222   2              }
+ 223   1      
+ 224   1              //æ‡¿Î≤‚¡øƒ£ Ωœ¬∞¥œ¬key2£¨º«¬ºµ±«∞◊¯±Í≤¢ø™ º≤‚¡ø
+ 225   1              else if((status&0x0f)==0x08){
+ 226   2                      if(GetKeyAct(enumKey2)==enumKeyPress){
+ 227   3                              if(status==0x18)                //»Ù“—æ≠ « ‰»Îµƒµ⁄∂˛◊¯±Í£¨‘Ú∑µªÿ≤‚æ‡ΩÁ√Ê 
+ 228   3                                      status = 0x08;
+C51 COMPILER V9.00   GPS                                                                   09/06/2024 00:02:55 PAGE 5   
+
+ 229   3                              else{
+ 230   4                                      status = 0x18;          //¥¶”⁄≤‚æ‡π¶ƒ‹ ±£¨»Ù¥À ±Ωˆ « ‰»Îµƒµ⁄“ª∏ˆ◊¯±Í£¨‘ÚΩ´status∏¸–¬£¨◊º±∏ ‰»Îœ¬“ª◊¯±Í                                                          
+             -                                                                                                    
+ 231   4                                      //∏¸–¬µ±«∞◊¯±ÍŒ™º«¬º◊¯±Í 
+ 232   4                                      xlon_h=lon_h,
+ 233   4                                      xlon_m=lon_m,
+ 234   4                                      xlon_s=lon_s,
+ 235   4                                      xlat_h=lat_h,
+ 236   4                                      xlat_m=lat_m,
+ 237   4                                      xlat_s=lat_s;
+ 238   4                              }
+ 239   3                      }
+ 240   2         }
+ 241   1         //display();
+ 242   1      }
+ 243          void nav_callback(){
+ 244   1               
+ 245   1               if((status&0x0f)==0x01){               //»Ù¥¶”⁄ ±º‰ƒ£ Ω£¨∞¥œ¬key3ø…“‘œ¥◊¯±Íƒ⁄¥Ê
+ 246   2                      if(GetAdcNavAct(enumAdcNavKey3)==enumKeyPress){
+ 247   3                              automode=0;                                     //œ¥◊¯±Íƒ⁄¥ÊµƒÕ¨ ±£¨“≤»°œ˚◊‘∂Ø∂®Œª◊¥Ã¨
+ 248   3                              M24C02_Init();
+ 249   3                        }
+ 250   2                      }
+ 251   1               if((status&0x0f)==0x03){
+ 252   2                      if(GetAdcNavAct(enumAdcNavKeyCenter)==enumKeyPress){
+ 253   3                              status=0x01;
+ 254   3                      
+ 255   3                      }
+ 256   2                      if(GetAdcNavAct(enumAdcNavKeyUp)==enumKeyPress){
+ 257   3                              automode=1;
+ 258   3                      }
+ 259   2                      if(GetAdcNavAct(enumAdcNavKeyDown)==enumKeyPress){
+ 260   3                              automode=0;
+ 261   3                      }
+ 262   2              }
+ 263   1      
+ 264   1          if((status&0x0f)==0x02){    //»Ù¥¶”⁄∂®Œªƒ£ Ω£¨ π”√µº∫Ωº¸ ±
+ 265   2              if(GetAdcNavAct(enumAdcNavKeyRight)==enumKeyPress||GetAdcNavAct(enumAdcNavKeyLeft)==enumKeyPress)
+ 266   2                  lon_lat = !lon_lat;
+ 267   2              else if(GetAdcNavAct(enumAdcNavKeyUp)==enumKeyPress){
+ 268   3                  status += 0x10;                    //¥Ê¥¢µ•‘™+1
+ 269   3                  point_addr = ((status>>4)&0x0f)*6;  //“ª∏ˆ◊¯±Í’º6∏ˆ◊÷Ω⁄
+ 270   3              }
+ 271   2                      else if(GetAdcNavAct(enumAdcNavKeyDown)==enumKeyPress){
+ 272   3                  status = ((status&0xf0)-0x10)|(status&0x0f);
+ 273   3                              point_addr = ((status>>4)&0x0f)*6;  //“ª∏ˆ◊¯±Í’º6∏ˆ◊÷Ω⁄
+ 274   3              }
+ 275   2              else if(GetAdcNavAct(enumAdcNavKey3)==enumKeyPress){    //∑¢ÀÕ◊¯±Í ˝æ›
+ 276   3                  i = M24C02_Read(point_addr);
+ 277   3                  send_buf[0] = i/10+'0',
+ 278   3                  send_buf[1] = i%10+'0',
+ 279   3                  send_buf[2] = '.';
+ 280   3      
+ 281   3                  i = M24C02_Read(point_addr+1);
+ 282   3                  send_buf[3] = i/10+'0',
+ 283   3                  send_buf[4] = i%10+'0',
+ 284   3                  send_buf[5] = '.';
+ 285   3      
+ 286   3                  i = M24C02_Read(point_addr+2);
+ 287   3                  send_buf[6] = i/10+'0',
+ 288   3                  send_buf[7] = i%10+'0',
+ 289   3                  send_buf[8] = '.';
+C51 COMPILER V9.00   GPS                                                                   09/06/2024 00:02:55 PAGE 6   
+
+ 290   3      
+ 291   3                  i = M24C02_Read(point_addr+3);
+ 292   3                  send_buf[9] = i/100+'0',
+ 293   3                  send_buf[10] = (i/10)%10+'0',
+ 294   3                  send_buf[11] = i%10+'0',
+ 295   3                  send_buf[12] = '.';
+ 296   3      
+ 297   3                  i = M24C02_Read(point_addr+4);
+ 298   3                  send_buf[13] = i/10+'0',
+ 299   3                  send_buf[14] = i%10+'0',
+ 300   3                  send_buf[15] = '.';
+ 301   3      
+ 302   3                  i = M24C02_Read(point_addr+5);
+ 303   3                  send_buf[16] = i/10+'0',
+ 304   3                  send_buf[17] = i%10+'0',
+ 305   3                  send_buf[18] = '.';
+ 306   3      
+ 307   3                  Uart1Print(send_buf,19);
+ 308   3              }
+ 309   2          }
+ 310   1      
+ 311   1          
+ 312   1          else if((status&0x0f)==0x04){   //»Ù¥¶”⁄∑¿µ¡∑¿◊ﬂ ßƒ£ Ω£¨ π”√µº∫Ωº¸
+ 313   2              //ø™πÿœ‘ æ
+ 314   2              if(status == 0x04){         //¥¶”⁄∑¿µ¡∑¿◊ﬂ ß≥ı ºΩÁ√Ê
+ 315   3                  if(GetAdcNavAct(enumAdcNavKeyCenter) == enumKeyPress){
+ 316   4                      if(lock_flag == 0x00){         //»ÙŒ¥…œÀ¯£¨‘Ú¥Úø™ΩÁ√Ê
+ 317   5                          lock_flag = 0x01;
+ 318   5                          M24C02_Write(0x80,lock_flag);
+ 319   5                          xlon_h=lon_h,
+ 320   5                          xlon_m=lon_m,
+ 321   5                          xlon_s=lon_s,
+ 322   5                          xlat_h=lat_h,
+ 323   5                          xlat_m=lat_m,
+ 324   5                          xlat_s=lat_s;
+ 325   5                          trycode = 0;
+ 326   5                      }
+ 327   4                      else
+ 328   4                          status = 0x44;             //πÿ±’∏√ΩÁ√Ê–Ë“™√‹¬Î£¨Ω¯»Î√‹¬Î ‰»Î◊¥Ã¨
+ 329   4                  }
+ 330   3                        }
+ 331   2                  if(GetAdcNavAct(enumAdcNavKey3) == enumKeyPress)
+ 332   2                      status = 0x24;                 //∞¥œ¬key3£¨Ω¯»Î√‹¬Î…Ë÷√◊¥Ã¨
+ 333   2      
+ 334   2                  //»Áπ˚¥¶”⁄∞≤»´æ‡¿Î…Ë÷√ƒ£ Ω
+ 335   2                  if(status == 0x14){     //…Ë÷√∞≤»´æ‡¿ÎΩÁ√Ê
+ 336   3                      if(GetAdcNavAct(enumAdcNavKeyLeft)==enumKeyPress){
+ 337   4                          weixuan = (weixuan<<1)&0x0f;
+ 338   4                          if(weixuan == 0)
+ 339   4                              weixuan =1;
+ 340   4                      }
+ 341   3                      else if(GetAdcNavAct(enumAdcNavKeyRight)==enumKeyPress){
+ 342   4                          weixuan = (weixuan>>1);
+ 343   4                          if(weixuan == 0)
+ 344   4                              weixuan = 1;
+ 345   4      
+ 346   4                      }
+ 347   3                      else if(GetAdcNavAct(enumAdcNavKeyUp)==enumKeyPress){
+ 348   4                          dis_temp += (weixuan&0x08)*125+(weixuan&0x04)*25+(weixuan&0x02)*5+(weixuan&0x01);
+ 349   4                          if(dis_temp>9999)
+ 350   4                              dis_temp=0;
+ 351   4      
+C51 COMPILER V9.00   GPS                                                                   09/06/2024 00:02:55 PAGE 7   
+
+ 352   4                      }
+ 353   3                      else if(GetAdcNavAct(enumAdcNavKeyDown)==enumKeyPress){
+ 354   4                          dis_temp -= (weixuan&0x08)*125+(weixuan&0x04)*25+(weixuan&0x02)*5+(weixuan&0x01);
+ 355   4                          if(dis_temp<0)
+ 356   4                              dis_temp=0;
+ 357   4                      }
+ 358   3                      else if(GetAdcNavAct(enumAdcNavKeyCenter)==enumKeyPress){
+ 359   4                          safety_dis = dis_temp;
+ 360   4                          M24C02_Write(0x81,safety_dis);
+ 361   4                                              status = 0x04;
+ 362   4                      }
+ 363   3                  }
+ 364   2      
+ 365   2                  //»Áπ˚¥¶”⁄√‹¬Î…Ë÷√ƒ£ Ω
+ 366   2                  else if(status == 0x24){    //…Ë÷√√‹¬ÎΩÁ√Ê
+ 367   3                      if(GetAdcNavAct(enumAdcNavKeyLeft)==enumKeyPress){
+ 368   4                          weixuan = (weixuan<<1)&0x0f;
+ 369   4                          if(weixuan == 0)
+ 370   4                              weixuan = 1;
+ 371   4                      }
+ 372   3                      else if(GetAdcNavAct(enumAdcNavKeyRight)==enumKeyPress){
+ 373   4                          weixuan = (weixuan>>1);
+ 374   4                          if(weixuan == 0)
+ 375   4                              weixuan = 1;
+ 376   4      
+ 377   4                      }
+ 378   3                      else if(GetAdcNavAct(enumAdcNavKeyUp)==enumKeyPress){
+ 379   4                          code_temp += (weixuan&0x08)*125+(weixuan&0x04)*25+(weixuan&0x02)*5+(weixuan&0x01);
+ 380   4                          if(code_temp>9999)
+ 381   4                              code_temp=0;
+ 382   4      
+ 383   4                      }
+ 384   3                      else if(GetAdcNavAct(enumAdcNavKeyDown)==enumKeyPress){
+ 385   4                          code_temp -= (weixuan&0x08)*125+(weixuan&0x04)*25+(weixuan&0x02)*5+(weixuan&0x01);
+ 386   4                          if(code_temp<0)
+ 387   4                              code_temp=0;
+ 388   4                      }
+ 389   3                      else if(GetAdcNavAct(enumAdcNavKeyCenter)==enumKeyPress){
+ 390   4                          lockcode = code_temp;
+ 391   4                          M24C02_Write(0x85,lockcode);
+ 392   4                                              status = 0x04;
+ 393   4                      }
+ 394   3      
+ 395   3      //                                 if(GetAdcNavAct(enumAdcNavKeyLeft)==enumKeyPress){                    //’‚∂Œ «µ˜ ‘◊˜”√
+ 396   3      //                    num++;
+ 397   3      //                    Seg7Print(10,10,10,10,10,10,10,num);
+ 398   3      //                                      LedPrint(status);
+ 399   3      //                                      print[0]=num;
+ 400   3      //                                      Uart1Print(print,1);
+ 401   3      //                }
+ 402   3                  }
+ 403   2      
+ 404   2                  // ‰»Î√‹¬Îƒ£ Ω
+ 405   2                  else if(status == 0x44){    // ‰»Î√‹¬ÎΩÁ√Ê
+ 406   3                      if(GetAdcNavAct(enumAdcNavKeyLeft)==enumKeyPress){
+ 407   4                          weixuan = (weixuan<<1)&0x0f;
+ 408   4                          if(weixuan == 0)
+ 409   4                              weixuan = 1;
+ 410   4                      }
+ 411   3                      else if(GetAdcNavAct(enumAdcNavKeyRight)==enumKeyPress){
+ 412   4                          weixuan = (weixuan>>1);
+ 413   4                          if(weixuan == 0)
+C51 COMPILER V9.00   GPS                                                                   09/06/2024 00:02:55 PAGE 8   
+
+ 414   4                              weixuan = 1;
+ 415   4      
+ 416   4                      }
+ 417   3                      else if(GetAdcNavAct(enumAdcNavKeyUp)==enumKeyPress){
+ 418   4                          trycode += (weixuan&0x08)*125+(weixuan&0x04)*25+(weixuan&0x02)*5+(weixuan&0x01);
+ 419   4                          if(trycode>9999)
+ 420   4                              trycode=0;
+ 421   4      
+ 422   4                      }
+ 423   3                      else if(GetAdcNavAct(enumAdcNavKeyDown)==enumKeyPress){
+ 424   4                          trycode -= (weixuan&0x08)*125+(weixuan&0x04)*25+(weixuan&0x02)*5+(weixuan&0x01);
+ 425   4                          if(trycode<0)
+ 426   4                              trycode=0;
+ 427   4                      }
+ 428   3                      else if(GetAdcNavAct(enumAdcNavKeyCenter)==enumKeyPress){
+ 429   4                          if(trycode == lockcode){
+ 430   5                              lock_flag = 0;          //Ω‚À¯£¨æØ±®π¶ƒ‹πÿ±’
+ 431   5                                                      SetPlayerMode(enumModeStop);    //Õ£÷πæØ±®
+ 432   5                              M24C02_Write(0x80,lock_flag);
+ 433   5                              status = 0x04;          //∑µªÿµΩ∑¿µ¡∑¿◊ﬂ ßƒ£ Ωµƒ≥ı ºΩÁ√Ê
+ 434   5                              trycode = 0;
+ 435   5                          }
+ 436   4                      }
+ 437   3                  }  
+ 438   2          }
+ 439   1          
+ 440   1          //»Ù¥¶”⁄≤‚æ‡ƒ£ Ω£¨ π”√µº∫Ωº¸
+ 441   1          else if(status == 0x08){    //≤‚æ‡π¶ƒ‹ΩÁ√Ê
+ 442   2              if(GetAdcNavAct(enumAdcNavKeyRight)==enumKeyPress||GetAdcNavAct(enumAdcNavKeyLeft)==enumKeyPress)
+ 443   2                      lon_lat = !lon_lat;
+ 444   2          }
+ 445   1      
+ 446   1          //æ≠π˝…œ ˆ≤Ÿ◊˜∫Û∏¸–¬led∫Õ ˝¬Îπ‹µƒœ‘ æ
+ 447   1          display();    
+ 448   1      }
+ 449          void display(){
+ 450   1      
+ 451   1              if(lock_flag==1){
+ 452   2                      SetEventCallBack(enumEventVib,vib_callback);
+ 453   2              } 
+ 454   1              //–£◊º ±º‰ƒ£ Ω
+ 455   1              if((status&0x0f)==0x01){
+ 456   2                      time = RTC_Read();
+ 457   2                      Seg7Print(time.hour/16,time.hour%16,12,time.minute/16,time.minute%16,12,time.second/16,time.second%16);
+ 458   2              }
+ 459   1              
+ 460   1              if((status&0x0f)==0x03){
+ 461   2                      Seg7Print(31,36,34,0,10,10,10,automode);
+ 462   2              }
+ 463   1      
+ 464   1              //∂®Œªƒ£ Ω
+ 465   1              else if((status&0x0f)==0x02||status==0x08){
+ 466   2                      if(lon_lat==0){
+ 467   3                              Seg7Print(30,lon_h/100,(lon_h/10)%10,lon_h%10+20,lon_m/10,lon_m%10+20,(int)lon_s/10,(int)lon_s%10);     //
+             -œ‘ æo£¨¥˙±Ìlongitude Œ≥∂»
+ 468   3                      }
+ 469   2                      else{
+ 470   3                              Seg7Print(31,10,lat_h/10,lat_h%10+20,lat_m/10,lat_m%10+20,(int)lat_s/10,(int)lat_s%10);                         //œ‘ æA£¨¥˙±
+             -Ìlatitude  æ≠∂»       
+ 471   3                      }
+ 472   2              }
+ 473   1      
+C51 COMPILER V9.00   GPS                                                                   09/06/2024 00:02:55 PAGE 9   
+
+ 474   1              //∑¿µ¡ƒ£ Ω
+ 475   1              else if((status&0x0f)==0x04){
+ 476   2                      if(status==0x04){                                                       //key2key3
+ 477   3                              if(lock_flag==0)
+ 478   3                                      Seg7Print(36,37,35,10,10,0,32,32);      //ULC   OFF
+ 479   3                              else
+ 480   3                                      Seg7Print(37,35,10,10,10,10,0,33);      //LC    ON
+ 481   3                              
+ 482   3                      }
+ 483   2                      else if(status==0x14){                                                  //…Ë÷√∞≤»´æ‡¿Îƒ£ Ω
+ 484   3                              Seg7Print(0,5,34,10,(dis_temp/1000)+((weixuan&0x08)>>3)*20,(dis_temp/100)%10+((weixuan&0x04)>>2)*20,(di
+             -s_temp/10)%10+((weixuan&0x02)>>1)*20,dis_temp%10+(weixuan&0x01)*20);
+ 485   3                      }
+ 486   2                      else if(status==0x24){                                                  //…Ë÷√√‹¬Îƒ£ Ω
+ 487   3                              Seg7Print(5,35,34,10,(code_temp/1000)+((weixuan&0x08)>>3)*20,(code_temp/100)%10+((weixuan&0x04)>>2)*20,
+             -(code_temp/10)%10+((weixuan&0x02)>>1)*20,code_temp%10+(weixuan&0x01)*20);
+ 488   3                              //Seg7Print(5,35,34,10,10,10,10,num);      //’‚æ‰‘≠ «µ˜ ‘◊˜”√
+ 489   3      
+ 490   3                      }
+ 491   2                      else if(status==0x44){
+ 492   3                              Seg7Print(10,10,10,10,(trycode/1000)+((weixuan&0x08)>>3)*20,(trycode/100)%10+((weixuan&0x04)>>2)*20,(tr
+             -ycode/10)%10+((weixuan&0x02)>>1)*20,trycode%10+(weixuan&0x01)*20);
+ 493   3                      }       
+ 494   2                      }
+ 495   1                      
+ 496   1              //≤‚æ‡ƒ£ Ω
+ 497   1              else if(status==0x18){
+ 498   2                      Seg7Print((dis/1000000)%10,(dis/1000000)%10,(dis/100000)%10,(dis/10000)%10,(dis/1000)%10,(dis/100)%10,(d
+             -is/10)%10,dis%10);
+ 499   2              }
+ 500   1              
+ 501   1              
+ 502   1              //±®æØƒ£ Ω                                      
+ 503   1              if(status==0x44){                                                                //±®æØΩÁ√Ê
+ 504   2                      
+ 505   2                      if(lock_flag==1){
+ 506   3                              
+ 507   3                              SetMusic(120,0xFC,alarm,sizeof(alarm),enumMscDrvLed);             //œÏ∆æØ±®
+ 508   3                              SetPlayerMode(enumModePlay);
+ 509   3                              //SetEventCallBack(enumEventSys10mS,alarm_callback);
+ 510   3                              }
+ 511   2                      else{
+ 512   3                              //SetPlayerMode(enumModePause);
+ 513   3                              status=0x04;
+ 514   3                              }
+ 515   2              }
+ 516   1                      
+ 517   1              LedPrint(status);
+ 518   1      }
+ 519          double radian(float angle){     //ËßíÂ∫¶ËΩ¨ÂºßÂ∫¶
+ 520   1          return angle*PI/180;    
+ 521   1      }
+ 522          int cal_dis(){          //ËÆ°ÁÆóË∑ùÁ¶ªÔºåÂçï‰Ωç‰∏∫10m
+ 523   1          xdata double X1,Y1,X2,Y2,res;
+ 524   1          xdata double a;
+ 525   1          xdata double b;
+ 526   1          X1 = radian(xlat_h + ((float)xlat_m)/100.0 + ((float)xlat_s)/10000.0);
+ 527   1          X2 = radian(lat_h + ((float)lat_m)/100.0 + ((float)lat_s)/10000.0);
+ 528   1          Y1 = radian(xlon_h + ((float)xlon_m)/100.0 + ((float)xlon_s)/10000.0);
+ 529   1          Y2 = radian(lon_h + ((float)lon_m)/100.0 + ((float)lon_s)/10000.0);
+ 530   1          a = X1-X2;
+ 531   1          b = Y1-Y2;
+C51 COMPILER V9.00   GPS                                                                   09/06/2024 00:02:55 PAGE 10  
+
+ 532   1          res = 2*EARTH_RADIUS*asin((sqrt(pow(sin(a/2),2)+cos(X1)*cos(X2)*pow(sin(b/2),2))));
+ 533   1          return (int)(res/10);
+ 534   1      }
+ 535          
+ 536          
+ 537          void main(){
+ 538   1              automode=0;                                                             //√ø¥Œreset∂º“™≥ı ºªØautoŒ™¡„£¨»∑∂®µ±«∞Œ™∑« ÷∂Ø∂®Œª◊¥Ã¨
+ 539   1              KeyInit();
+ 540   1              DisplayerInit();
+ 541   1              DS1302Init(time);
+ 542   1              AdcInit(ADCexpEXT);                                     //≤ª–Ë“™Ω” ’EXIT…œµƒµÁ∆Ω–≈œ¢£¨“ÚŒ™…œ√Ê «gpsƒ£øÈΩ¯––¥Æø⁄2µƒÕ®–≈
+ 543   1              BeepInit();
+ 544   1              MusicPlayerInit();
+ 545   1              VibInit();
+ 546   1      
+ 547   1              SetDisplayerArea(0,7);
+ 548   1              LedPrint(status);
+ 549   1              Uart1Init(9600);
+ 550   1              Uart2Init(9600,Uart2UsedforEXT);                //≤®Ãÿ¬ Œ™9600£¨ ˝æ›¿¥‘¥ «EXITø⁄
+ 551   1      
+ 552   1              SetUart1Rxd(buf, sizeof(buf), matchhead, 6);
+ 553   1              SetEventCallBack(enumEventUart1Rxd,uart1_callback);
+ 554   1              
+ 555   1              SetEventCallBack(enumEventUart2Rxd,uart2_callback);
+ 556   1              SetUart2Rxd(uart2_buf, sizeof(uart2_buf), matchhead, 6);
+ 557   1              //SetEventCallBack(enumEventUart2Rxd,uart_callback);
+ 558   1      
+ 559   1      
+ 560   1              SetEventCallBack(enumEventKey,key_callback);
+ 561   1              SetEventCallBack(enumEventNav,nav_callback);
+ 562   1              SetEventCallBack(enumEventSys100mS,display);
+ 563   1              MySTC_Init();       
+ 564   1              while(1)                
+ 565   1              {
+ 566   2                      MySTC_OS();    
+ 567   2              }
+ 568   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   4714    ----
+   CONSTANT SIZE    =     62    ----
+   XDATA SIZE       =    175      28
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     28       6
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      1    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  1 WARNING(S),  0 ERROR(S)

@@ -1,0 +1,1 @@
+"source\display.c" BROWSE INCDIR(.\inc) DEBUG OBJECTEXTEND PRINT(.\list\display.lst) OBJECT(.\output\display.obj)

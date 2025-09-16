@@ -1,0 +1,1 @@
+"source\nav.c" BROWSE INCDIR(.\inc) DEBUG OBJECTEXTEND PRINT(.\list\nav.lst) OBJECT(.\output\nav.obj)

@@ -1,0 +1,215 @@
+C51 COMPILER V9.00   NAV                                                                   09/03/2024 02:58:50 PAGE 1   
+
+
+C51 COMPILER V9.00, COMPILATION OF MODULE NAV
+OBJECT MODULE PLACED IN .\output\nav.obj
+COMPILER INVOKED BY: D:\Keli\C51\BIN\C51.EXE source\nav.c BROWSE INCDIR(.\inc) DEBUG OBJECTEXTEND PRINT(.\list\nav.lst) 
+                    -OBJECT(.\output\nav.obj)
+
+line level    source
+
+   1          /*
+   2          #include "data.h"
+   3          #include "func.h"
+   4          #include "ds1302.h"
+   5          #include "M24C02.h"
+   6          #include "adc.h"
+   7          #include "sys.h"
+   8          #include "key.h"
+   9          #include "uart1.h"
+  10          
+  11          void nav_callback(){
+  12          
+  13              
+  14              if((status&0x0f)==0x02){    //若处于定位模式，使用导航键时
+  15                  if(GetAdcNavAct(enumAdcNavKeyRight)==enumKeyPress||GetAdcNavAct(enumAdcNavKeyLeft)==enumKeyPress)
+  16                      lon_lat = !lon_lat;
+  17                  else if(GetAdcNavAct(enumAdcNavKeyUp)==enumKeyPress){
+  18                      status += 0x10;                    //存储单元+1
+  19                      point_addr = ((status>>4)&0x0f)*6;  //一个坐标占6个字节
+  20                  }
+  21                  else if(GetAdcNavAct(enumAdcNavKey3)==enumKeyPress){    //发送坐标数据
+  22                      i = M24C02_Read(point_addr);
+  23                      send_buf[0] = i/10+'0',
+  24                      send_buf[1] = i%10+'0',
+  25                      send_buf[2] = '.';
+  26          
+  27                      i = M24C02_Read(point_addr+1);
+  28                      send_buf[3] = i/10+'0',
+  29                      send_buf[4] = i%10+'0',
+  30                      send_buf[5] = '.';
+  31          
+  32                      i = M24C02_Read(point_addr+2);
+  33                      send_buf[6] = i/10+'0',
+  34                      send_buf[7] = i%10+'0',
+  35                      send_buf[8] = '.';
+  36          
+  37                      i = M24C02_Read(point_addr+3);
+  38                      send_buf[9] = i/100+'0',
+  39                      send_buf[10] = (i/10)%10+'0',
+  40                      send_buf[11] = i%10+'0',
+  41                      send_buf[12] = '.';
+  42          
+  43                      i = M24C02_Read(point_addr+4);
+  44                      send_buf[13] = i/10+'0',
+  45                      send_buf[14] = i%10+'0',
+  46                      send_buf[15] = '.';
+  47          
+  48                      i = M24C02_Read(point_addr+5);
+  49                      send_buf[16] = i/10+'0',
+  50                      send_buf[17] = i%10+'0',
+  51                      send_buf[18] = '.';
+  52          
+  53                      Uart1Print(send_buf,19);
+  54                  }
+C51 COMPILER V9.00   NAV                                                                   09/03/2024 02:58:50 PAGE 2   
+
+  55              }
+  56          
+  57              
+  58              else if((status&0x0f)==0x04){   //若处于防盗防走失模式，使用导航键
+  59                  //开关显示
+  60                  if(status == 0x04){         //处于防盗防走失初始界面
+  61                      if(GetAdcNavAct(enumAdcNavKeyCenter) == enumKeyPress){
+  62                          if(lock_flag == 0x00){         //若未上锁，则打开界面
+  63                              lock_flag = 0x01;
+  64                              M24C02_Write(0x80,lock_flag);
+  65                              xlon_h=lon_h,
+  66                              xlon_m=lon_m,
+  67                              xlon_s=lon_s,
+  68                              xlat_h=lat_h,
+  69                              xlat_m=lat_m,
+  70                              xlat_s=lat_s;
+  71                              trycode = 0;
+  72                          }
+  73                          else
+  74                              status = 0x44;             //关闭该界面需要密码，进入密码输入状态
+  75                      }
+  76          
+  77                      if(GetAdcNavAct(enumAdcNavKey3) == enumKeyPress)
+  78                          status = 0x24;                 //按下key3，进入密码设置状态
+  79          
+  80                      //如果处于距离设置模式
+  81                      if(status == 0x14){     //设置距离界面
+  82                          if(GetAdcNavAct(enumAdcNavKeyLeft)==enumKeyPress){
+  83                              weixuan = (weixuan<<1)&0x0f;
+  84                              if(weixuan == 0)
+  85                                  weixuan =1;
+  86                          }
+  87                          else if(GetAdcNavAct(enumAdcNavKeyRight)==enumKeyPress){
+  88                              weixuan = (weixuan>>1);
+  89                              if(weixuan == 0)
+  90                                  weixuan = 1;
+  91          
+  92                          }
+  93                          else if(GetAdcNavAct(enumAdcNavKeyUp)==enumKeyPress){
+  94                              dis_temp += (weixuan&0x08)*125+(weixuan&0x04)*25+(weixuan&0x02)*5+(weixuan&0x01);
+  95                              if(dis_temp>9999)
+  96                                  dis_temp=0;
+  97          
+  98                          }
+  99                          else if(GetAdcNavAct(enumAdcNavKeyDown)==enumKeyPress){
+ 100                              dis_temp -= (weixuan&0x08)*125+(weixuan&0x04)*25+(weixuan&0x02)*5+(weixuan&0x01);
+ 101                              if(dis_temp<0)
+ 102                                  dis_temp=0;
+ 103                          }
+ 104                          else if(GetAdcNavAct(enumAdcNavKeyCenter)==enumKeyPress){
+ 105                              safety_dis = dis_temp;
+ 106                              M24C02_Write(0x81,safety_dis);
+ 107                          }
+ 108                      }
+ 109          
+ 110                      //如果处于密码设置模式
+ 111                      else if(status == 0x24){    //设置密码界面
+ 112                          if(GetAdcNavAct(enumAdcNavKeyLeft)==enumKeyPress){
+ 113                              weixuan = (weixuan<<1)&0x0f;
+ 114                              if(weixuan == 0)
+ 115                                  weixuan = 1;
+ 116                          }
+C51 COMPILER V9.00   NAV                                                                   09/03/2024 02:58:50 PAGE 3   
+
+ 117                          else if(GetAdcNavAct(enumAdcNavKeyRight)==enumKeyPress){
+ 118                              weixuan = (weixuan>>1);
+ 119                              if(weixuan == 0)
+ 120                                  weixuan = 1;
+ 121          
+ 122                          }
+ 123                          else if(GetAdcNavAct(enumAdcNavKeyUp)==enumKeyPress){
+ 124                              code_temp += (weixuan&0x08)*125+(weixuan&0x04)*25+(weixuan&0x02)*5+(weixuan&0x01);
+ 125                              if(code_temp>9999)
+ 126                                  code_temp=0;
+ 127          
+ 128                          }
+ 129                          else if(GetAdcNavAct(enumAdcNavKeyDown)==enumKeyPress){
+ 130                              code_temp -= (weixuan&0x08)*125+(weixuan&0x04)*25+(weixuan&0x02)*5+(weixuan&0x01);
+ 131                              if(code_temp<0)
+ 132                                  code_temp=0;
+ 133                          }
+ 134                          else if(GetAdcNavAct(enumAdcNavKeyCenter)==enumKeyPress){
+ 135                              lockcode = code_temp;
+ 136                              M24C02_Write(0x85,safety_dis);
+ 137                          }
+ 138                      }
+ 139          
+ 140                      //输入密码模式
+ 141                      else if(status == 0x44){    //输入密码界面
+ 142                          if(GetAdcNavAct(enumAdcNavKeyLeft)==enumKeyPress){
+ 143                              weixuan = (weixuan<<1)&0x0f;
+ 144                              if(weixuan == 0)
+ 145                                  weixuan = 1;
+ 146                          }
+ 147                          else if(GetAdcNavAct(enumAdcNavKeyRight)==enumKeyPress){
+ 148                              weixuan = (weixuan>>1);
+ 149                              if(weixuan == 0)
+ 150                                  weixuan = 1;
+ 151          
+ 152                          }
+ 153                          else if(GetAdcNavAct(enumAdcNavKeyUp)==enumKeyPress){
+ 154                              trycode += (weixuan&0x08)*125+(weixuan&0x04)*25+(weixuan&0x02)*5+(weixuan&0x01);
+ 155                              if(trycode>9999)
+ 156                                  trycode=0;
+ 157          
+ 158                          }
+ 159                          else if(GetAdcNavAct(enumAdcNavKeyDown)==enumKeyPress){
+ 160                              trycode -= (weixuan&0x08)*125+(weixuan&0x04)*25+(weixuan&0x02)*5+(weixuan&0x01);
+ 161                              if(trycode<0)
+ 162                                  trycode=0;
+ 163                          }
+ 164                          else if(GetAdcNavAct(enumAdcNavKeyCenter)==enumKeyPress){
+ 165                              if(trycode == lockcode){
+ 166                                  lock_flag = 0;      //解锁，警报功能关闭
+ 167                                  M24C02_Write(0x80,lock_flag);
+ 168                                  status = 0x04;      //返回到防盗防走失模式的初始界面
+ 169                                  trycode = 0;
+ 170                              }
+ 171                          }
+ 172                      } 
+ 173                  } 
+ 174              }
+ 175              
+ 176              //若处于测距模式，使用导航键
+ 177              else if(status == 0x08){    //测距功能界面
+ 178                  if(GetAdcNavAct(enumAdcNavKeyRight)==enumKeyPress||GetAdcNavAct(enumAdcNavKeyLeft)==enumKeyPress)
+C51 COMPILER V9.00   NAV                                                                   09/03/2024 02:58:50 PAGE 4   
+
+ 179                          lon_lat = !lon_lat;
+ 180              }
+ 181          
+ 182              //经过上述操作后更新led和数码管的显示
+ 183              display();    
+ 184          }
+ 185          */
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   ----    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

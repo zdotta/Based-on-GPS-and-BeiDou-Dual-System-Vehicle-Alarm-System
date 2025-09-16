@@ -1,0 +1,98 @@
+C51 COMPILER V9.00   KEY                                                                   09/03/2024 02:58:50 PAGE 1   
+
+
+C51 COMPILER V9.00, COMPILATION OF MODULE KEY
+OBJECT MODULE PLACED IN .\output\key.obj
+COMPILER INVOKED BY: D:\Keli\C51\BIN\C51.EXE source\key.c BROWSE INCDIR(.\inc) DEBUG OBJECTEXTEND PRINT(.\list\key.lst) 
+                    -OBJECT(.\output\key.obj)
+
+line level    source
+
+   1          /*#include "data.h"
+   2          #include "func.h"
+   3          #include "M24C02.h"
+   4          #include "sys.h"
+   5          #include "key.h"
+   6          
+   7          void key_callback(){
+   8          
+   9                  //按下key1进入模式切换界面
+  10                  if(GetKeyAct(enumKey1) == enumKeyPress){
+  11                    if(((status&0x0f)==0)||((status&0x0f)==0x08)){
+  12                          status = 0x01;
+  13                          }
+  14                    else{
+  15                          status = (status&0x0f)*2;
+  16                          }
+  17                  }
+  18          
+  19                  //定位模式下按下key2记录当前坐标 
+  20                  if((status&0x0f) == 0x02){
+  21                          if(GetKeyAct(enumKey2) == enumKeyPress){
+  22                          
+  23                          M24C02_Write(point_addr,lat_h);
+  24                          Delay10ms();
+  25                          
+  26                          M24C02_Write(point_addr+0x01,lat_m);
+  27                          Delay10ms();
+  28          
+  29                          M24C02_Write(point_addr+0x02,lat_s);
+  30                          Delay10ms();
+  31          
+  32                          M24C02_Write(point_addr+0x03,lon_h);
+  33                          Delay10ms();
+  34          
+  35                          M24C02_Write(point_addr+0x04,lon_m);
+  36                          Delay10ms();
+  37          
+  38                          M24C02_Write(point_addr+0x05,lon_s);
+  39                          Delay10ms();
+  40          
+  41                          status = status + 0x10;         //记录坐标的单位移动1位
+  42                          point_addr = ((status>>4)&0x0f)*6;
+  43                          }
+  44                  }
+  45          
+  46                  //防盗防走失模式下按下key2，进入距离设置界面
+  47                  else if((status&0x0f)==0x04){
+  48                          if(GetKeyAct(enumKey2)==enumKeyPress)
+  49                          status = 0x14;
+  50                  }
+  51          
+  52                  //距离测量模式下按下key2，记录当前坐标并开始测量
+  53                  else if((status&0x0f)==0x08){
+  54                          if(GetKeyAct(enumKey2)==enumKeyPress){
+C51 COMPILER V9.00   KEY                                                                   09/03/2024 02:58:50 PAGE 2   
+
+  55                                  if(status==0x18)
+  56                                          status = 0x08;
+  57                                  else{
+  58                                          status = 0x18;
+  59          
+  60                                          //更新当前坐标为记录坐标 
+  61                                          xlon_h=lon_h,
+  62                                          xlon_m=lon_m,
+  63                                          xlon_s=lon_s,
+  64                                          xlat_h=lat_h,
+  65                                          xlat_m=lat_m,
+  66                                          xlat_s=lat_s;
+  67                                  }
+  68                          }
+  69             }
+  70          }
+  71          */
+  72          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   ----    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

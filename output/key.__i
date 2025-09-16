@@ -1,0 +1,1 @@
+"source\key.c" BROWSE INCDIR(.\inc) DEBUG OBJECTEXTEND PRINT(.\list\key.lst) OBJECT(.\output\key.obj)

@@ -1,0 +1,55 @@
+C51 COMPILER V9.00   UART                                                                  09/03/2024 02:59:39 PAGE 1   
+
+
+C51 COMPILER V9.00, COMPILATION OF MODULE UART
+OBJECT MODULE PLACED IN .\output\uart.obj
+COMPILER INVOKED BY: D:\Keli\C51\BIN\C51.EXE source\uart.c BROWSE INCDIR(.\inc) DEBUG OBJECTEXTEND PRINT(.\list\uart.lst
+                    -) OBJECT(.\output\uart.obj)
+
+line level    source
+
+   1          #include "uart.h"
+   2          #include "func.h"
+   3          
+   4          //处理接收到的报文数据
+   5          
+   6          void uart_callback(){
+   7   1      
+   8   1              //UTC时间校准
+   9   1              hour_temp = (buf[7] - '0')*10+(buf[8] - '0')+8;
+  10   1              if(hour_temp > 24)
+  11   1                      hour_temp -= 24;
+  12   1              time.hour = (hour_temp/10)*16 + hour_temp%10;
+  13   1              time.minute = (buf[9] - '0')*16 + (buf[10] - '0');
+  14   1              time.second = (buf[11] - '0')*16 + (buf[12] - '0');
+  15   1              RTC_Write(time);
+  16   1      
+  17   1              //经纬度数据
+  18   1              lat_h = (buf[18] - '0')*10 + (buf[19] - '0');
+  19   1              lat_m = (buf[20] - '0')*10 + (buf[21] - '0');
+  20   1              lat_s = ((buf[23] - '0')*1000 + (buf[24] - '0')*100+(buf[25] - '0')*10 + (buf[26] - '0'))*6/1000;
+  21   1              lon_h = (buf[31] - '0')*100 + (buf[32] - '0')*10 + (buf[33] - '0');
+  22   1              lon_m = (buf[34] - '0')*10 + (buf[35] - '0');
+  23   1              lon_s = ((buf[37] - '0')*1000 + (buf[38] - '0')*100+(buf[39] - '0')*10 + (buf[40] - '0'))*6/1000;
+  24   1      
+  25   1              //距离更新
+  26   1              if(lock_flag == 1||status == 0x18)
+  27   1                      dis = cal_dis();
+  28   1              else if(lock_flag == 1 &&dis>safety_dis)
+  29   1                      status = 0x44;
+  30   1      
+  31   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    494    ----
+   CONSTANT SIZE    =      6    ----
+   XDATA SIZE       =      6    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      4    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      1    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
